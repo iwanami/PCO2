@@ -1,7 +1,6 @@
 /**
  *
  * @author Numa Trezzini
- * @author
  * @version 
  */
 
@@ -13,9 +12,7 @@ public class Mutex {
     
     private int nb_attente = 0;
     
-    private Object mutex = new Object();
-    
-    //public Mutex(){}
+    private final Object mutex = new Object();
     
     /**
      * Nom: get
