@@ -1,8 +1,28 @@
 /**
  * PCO2 - Laboratoire 1 - Modelisation de moniteurs en java
  * 
+ * Nom           : Ville
+ * But           : Modelise une ville disposant de sites mettant proposant aux habitants de prendre des velos a des
+ *                 bornes et se deplacer de site a site. Afin d'equilibrer les quantites de velos disponibles a chaque
+ *                 site, une equipe en camionnette fait la tournee des sites (ainsi que du depot, indice par nb_sites).
+ * Fonctionnement: Cette classe dispose des elements suivants:
+ *                 - Classe Habitant: herite de Thread, permet de modeliser le comportement d'un habitant: il prend un
+ *                                    velo a son site de depart, se deplace vers un autre site (aleatoire), depose son
+ *                                    velo, fait une activite, puis repart
+ *                 - Classe Camionnette: herite de Thread, permet de modeliser le comportement de l'equipe en
+ *                                       camionnette: elle part du depot en prenant avec elle au maximum 4 velos
+ *                                       (capacite de la camionnette), parcourt tous les sites et depose ou retire des
+ *                                       velos selon l'algorithme specifie dans Site. une fois la tournee terminee, elle
+ *                                       retourne au depot, pose tous ses velos et fait une pause avant de repartir
+ *                 - Classe ControlThread: herite de thread, permet d'ajouter et supprimer des velos, ainsi que de
+ *                                         terminer le programme de maniere "delicate".
+ *                 - Methodes saisirInt: ces deux methodes permettes de lire au clavier des entiers soit entre deux
+ *                                       bornes, soit plus grand qu'une valeur.
+ *                 - Methode init: permet de saisir et d'initialiser les variables necessaires au bon fonctionnement du
+ *                                 labo.
+ *                 - Methode random: permet d'obtenir un nombre aleatoire compris entre les deux bornes passees en
+ *                                   parametres.
  * @author Numa Trezzini
- * @version 1.0
  */
  
 
@@ -226,10 +246,7 @@ public class Ville {
                 //prendre au plus 2 velos du depot
                 console.append("-------------------------------\n");
                 console.append("je prends les velos du depot\n");
-                for(int i = 0; i < Math.min(2, sites[site_depot].getNbVelos()); i++){
-                    sites[site_depot].retirerVelo(console);
-                    nb_velos_camionnette++;
-                }
+                nb_velos_camionnette = sites[site_depot].retirerVelosDepot();
                 //deplacement vers le premier site
                 try{sleep(random(temps_min_trajet, temps_max_trajet));}
                 catch(InterruptedException e){}
@@ -246,9 +263,7 @@ public class Ville {
                     catch(InterruptedException e){}
                 }
                 //une fois la tournee finie, deposer tous les velos au depot
-                for(int i = 0; i < nb_velos_camionnette; i++){
-                    sites[site_depot].deposerVelo(console);
-                }
+                sites[site_depot].deposerVelosDepot(nb_velos_camionnette);
                 nb_velos_camionnette = 0;
                 //faire une pause avant de repartir pour une tournee
                 console.append("PAUSE!!\n");
@@ -349,7 +364,7 @@ public class Ville {
             else if(action == 2){
                 int num_site;
                 System.out.print("Un velo va etre volé.\n"+
-                                 "Entrez un numero de site pour voler un velo (entre 0 et " + nb_sites +")");
+                                 "Entrez un numero de site pour voler un velo (entre 0 et " + (nb_sites-1) +")");
                 //les velos ne peuvent pas etre enleves du depot
                 num_site = saisirInt(0, nb_sites-1);
                 //pas besoin de notifier les habitants en attente d'une borne, le moniteur le fait lui-meme
@@ -378,12 +393,7 @@ public class Ville {
      * @return int: la valeur saise
      */
     private int saisirInt(int min){
-        Scanner input = new Scanner(System.in);
-        int saisie;
-        do{
-            saisie = input.nextInt();
-        }while(saisie < min);
-        return saisie;
+        return saisirInt(min, Integer.MAX_VALUE);
     }/*end saisirInt*/
     
     /**
@@ -485,7 +495,7 @@ public class Ville {
      * but: methode principale du labo 
      */
     public static void main(String[] args) {
-        Ville lab = new Ville();
+        Ville lausanne = new Ville();
     }/*end main*/
     
     

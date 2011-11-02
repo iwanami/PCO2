@@ -14,6 +14,9 @@
  *                   transmettre le controle du moniteur
  *                 - nb_velos: un compteur de velo, permettant de savoir si le "buffer" du moniteur est plein ou vide
  *                 - nb_bornes: la taille du "buffer", soit le nombre de bornes disponibles
+ *                 - liste_attente_velos: liste permettant de stocker l'ordre d'arrivee des habitants attendant un velo
+ *                 - liste_attente_borne: liste permettant de stocker l'ordre d'arrivee des habitants attendant une
+ *                   borne
  *                 
  *                 Le moniteur dispose de plusieur fonctions d'entree:
  *                 - deposerVelo, permettant aux habitants de "produire" un velo
@@ -55,9 +58,6 @@
  *                 ne sont pas verifiees. Il suffit ainsi de verouiller le mutex.
  *                 Dans le cas du retrait, il faut encore verifier qu'on prenne au maximum 4 velos du depot.
  * 
- * Remarques     : Afin de modeliser au mieux le comportement de gens face a une situation telle que celle de deposer ou
- *                 retirer un velo d'une borne, les taches en attente sont toutes reveillees. Une seule d'entre elles
- *                 pourra sortir de la boucle et ainsi s'approprier l'objet convoite.
  *                 
  * @author Numa Trezzini
  */
@@ -121,7 +121,7 @@ public class Site {
                 //on libere le mutex, comme on va attendre
                 mutex.free();
                 ta.append("j'attends une borne...\n");
-                //attente
+                //attente sur une borne
                 try{borne_mutex.wait();}
                 catch(InterruptedException e){}
                 //decrement du nombre d'habitants en attente d'une borne
@@ -131,12 +131,12 @@ public class Site {
         //il y a des bornes disponibles
         //increment du nombre de velos
         this.nb_velos++;
-        //on libere soit les habitants en attente d'un velo (et on leur transmet le mutex)
-        //soit on libere le mutex s'il n'y a personne en attente.
+        //on libere soit le premier habitants en attente d'un velo (et on leur transmet le mutex)
         synchronized(velo_mutex){
             if(this.nb_attente_velo > 0){
-                velo_mutex.notifyAll();
+                velo_mutex.notify();
             }
+            //sinon on libere le mutex.
             else{
                 mutex.free();
             }
@@ -171,10 +171,11 @@ public class Site {
         //decrement du nombre de velos
         this.nb_velos--;
         synchronized(borne_mutex){
-            
+            //on verifie si des taches attendent des bornes libres et on reveille la premiere
             if(this.nb_attente_borne > 0){
-                borne_mutex.notifyAll();
+                borne_mutex.notify();
             }
+            //sinon, on libere le mutex
             else{
                 mutex.free();
             }
@@ -185,14 +186,18 @@ public class Site {
     
     /**
      * Nom: volerVelo
+     * But: supprime un velo s'il en reste
      */
     public void volerVelo(){
         mutex.get();
         synchronized(borne_mutex){
+            //s'il y a des velos, on en prend un
             if(this.nb_velos > 0){
                 this.nb_velos--;
+                //il y a maintenant des bornes libres, on verifie donc si quelqu'un en attend une
+                //et on lui transfere le mutex. La fonctione se termine donc
                 if(this.nb_attente_borne > 0){
-                    this.borne_mutex.notifyAll();
+                    borne_mutex.notify();
                     return;
                 }
             }
@@ -203,16 +208,17 @@ public class Site {
     
     /**
      * Nom: ajouterVelo
+     * But: ajoute un velo au depot
      */
     public void ajouterVelo(){
         mutex.get();
         synchronized(velo_mutex){
-            if(this.nb_velos < this.nb_bornes){
-                this.nb_velos++;
-                if(this.nb_attente_velo > 0){
-                    this.velo_mutex.notifyAll();
-                    return;
-                }
+            this.nb_velos++;
+            //si quelqu'un attend un velo, on le reveille
+            //normalement, cette verification est inutile, car personne ne va au depot, en dehors de la camionnette
+            if(this.nb_attente_velo > 0){
+                velo_mutex.notify();
+                return;
             }
         }
         mutex.free();
@@ -222,31 +228,49 @@ public class Site {
     /**
      * Nom: passageCamionnette
      * @param nb_velos_camionnette
-     * @return 
+     * @return int: le nombre de velos ajoutes (retour positif) ou retires (retour negatif). nul si rien n'a bouge
+     * Remarques: le nombre renvoye est le nombre de velos deplaces entre le site et la camionnette. positif si la
+     *            camionnette a pris des velos, negatif si elle en a depose et 0 sinon.
      */
     public int passageCamionnette(int nb_velos_camionnette){
         int c = 0;
+        //on verouille le mutex du moniteur
         mutex.get();
+        //s'il y a moins de 2 bornes disponibles, on prend des velos dans la mesure de la capacite de la camionnette
         if(nb_velos > nb_bornes-2){
-            c = Math.min(nb_velos-(nb_bornes-2), 4-nb_velos_camionnette);
-            this.nb_velos -= c;
             synchronized(borne_mutex){
+                c = Math.min(nb_velos-(nb_bornes-2), 4-nb_velos_camionnette);
+                this.nb_velos -= c;
+                //on reveille les taches en attente d'une borne s'il y a lieu
+                //on transfere le mutex dans ce cas. Sinon, on libere le mutex
+                //puis la fonction se termine
                 if(this.nb_attente_borne > 0){
-                    this.borne_mutex.notifyAll();
-                    return c;
+                    borne_mutex.notify();
                 }
-            }
-        }  
-        else if(nb_velos < nb_bornes-2){
-            c = Math.min((nb_bornes-2)- nb_velos, nb_velos_camionnette);
-            this.nb_velos += c;
-            synchronized(velo_mutex){
-                if(this.nb_attente_velo > 0){
-                    this.velo_mutex.notifyAll();
-                    return -c;
+                else{
+                    mutex.free();
                 }
+                return c;
             }
         }
+        //s'il y plus de 3 bornes disponibles, on ajoute des velos, dans la mesure de la capacite de la camionnette
+        else if(nb_velos < nb_bornes-2){
+            synchronized(velo_mutex){
+                c = Math.min((nb_bornes-2)- nb_velos, nb_velos_camionnette);
+                this.nb_velos += c;
+                //on reveille les taches en attente d'un velo s'il y a lieu
+                //on transfere le mutex dans ce cas. Sinon, on libere le mutex
+                //puis la fonction se termine
+                if(this.nb_attente_velo > 0){
+                    velo_mutex.notify();
+                }
+                else{
+                    mutex.free();
+                }
+                return -c;
+            }
+        }
+        //si rien n'a ete fait, on libere le mutex et on termine la fonction
         mutex.free();
         return c;
     }/*end passageCamionnette*/
@@ -275,7 +299,7 @@ public class Site {
     
     /**
      * Nom: getNbVelos
-     * @return 
+     * @return int: le nombre de velos disponibles sur le site
      */
     synchronized int getNbVelos(){return this.nb_velos;}/*end getNbVelos*/
     
